@@ -113,15 +113,14 @@ Resources:
           phases:
             pre_build:
               commands:
+                - cd app
                 - $(aws ecr get-login --registry-ids $REGISTRY_ID)
             build:
               commands:
-                - cd app
                 - date +%Y%m%d%H%M%S > .image_tag
                 - docker build -t $REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag) .
             post_build:
               commands:
-                - cd app
                 - docker push "$REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag)"
                 - cat Dockerrun.aws.json | sed "s/\${DOCKER_IMAGE_URI}/$REPOSITORY_URI\/$REGISTRY_NAME:$(cat .image_tag)/" > ../Dockerrun.aws.json
           artifacts:
