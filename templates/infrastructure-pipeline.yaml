@@ -13,7 +13,7 @@ Parameters:
     Type: String
   ArtifactsBucket:
     Type: String
-    Default: builds-us-west-2
+    Default: blackcathacker-builds-us-west-2
 
 Resources:
   CloudFormationServiceRole:
