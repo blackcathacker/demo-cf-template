@@ -116,20 +116,18 @@ Resources:
                 - $(aws ecr get-login --registry-ids $REGISTRY_ID)
             build:
               commands:
-                - cd app; date +%Y%m%d%H%M%S > .image_tag
-                - >
-                 cd app; docker build --build-arg \
-                  -t $REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag) .
+                - cd app
+                - date +%Y%m%d%H%M%S > .image_tag
+                - docker build -t $REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag) .
             post_build:
               commands:
+                - cd app
                 - docker push "$REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag)"
-                - cd app; cat Dockerrun.aws.json | sed "s/\${DOCKER_IMAGE_URI}/$REPOSITORY_URI\/$REGISTRY_NAME:$(cat .image_tag)/" > ../Dockerrun.aws.json
+                - cat Dockerrun.aws.json | sed "s/\${DOCKER_IMAGE_URI}/$REPOSITORY_URI\/$REGISTRY_NAME:$(cat .image_tag)/" > ../Dockerrun.aws.json
           artifacts:
             discard-paths: no
             files:
               - "Dockerrun.aws.json"
-              - "bin/**/*"
-              - ".ebextensions/**/*"
 
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
