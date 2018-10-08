@@ -1,0 +1,212 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Demos infrastructure pipeline'
+
+Parameters:
+  Version:
+    Type: String
+    Default: 1
+  GitHubOAuthToken:
+    Type: String
+    NoEcho: true
+  GitHubRepo:
+    Type: String
+  ArtifactsBucket:
+    Type: String
+    Default: builds-us-west-2
+
+Resources:
+  CloudFormationServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-infrastructure-cfs-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'cloudformation.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  CodePipelineServiceRole:
+    DependsOn: CloudFormationServiceRole
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-infrastructure-cps-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'codepipeline.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  CodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-infrastructure-cbs-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'codebuild.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  Pipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    DependsOn:
+      - CodePipelineServiceRole
+      - CloudFormationServiceRole
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Name: !Sub ${GitHubRepo}-infrastructure-v${Version}-cf
+      RestartExecutionOnUpdate: true
+      RoleArn: !Sub '${CodePipelineServiceRole.Arn}'
+      Stages:
+      - Name: Source
+        Actions:
+        - Name: SourceAction
+          ActionTypeId:
+            Category: Source
+            Owner: ThirdParty
+            Provider: GitHub
+            Version: 1
+          Configuration:
+            Owner: blackcathacker
+            Repo: !Sub ${GitHubRepo}
+            Branch: master
+            OAuthToken: !Ref GitHubOAuthToken
+          OutputArtifacts:
+          - Name: Source
+          RunOrder: 1
+      - Name: UpdateThisPipeline
+        Actions:
+        - Name: UpdateThisPipeline
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub '${CloudFormationServiceRole.Arn}'
+            StackName: !Sub ${GitHubRepo}-infrastructure-pipeline-v${Version}-cf
+            TemplatePath: 'Source::templates/infrastructure-pipeline.yaml'
+            ParameterOverrides: !Sub '{
+              "GitHubRepo":"${GitHubRepo}",
+              "GitHubOAuthToken":"${GitHubOAuthToken}",
+              "Version":"${Version}",
+              "ArtifactsBucket":"${ArtifactsBucket}"
+            }'
+          InputArtifacts:
+          - Name: Source
+          RunOrder: 1
+      - Name: UpdateAppPipeline
+        Actions:
+          - Name: UpdateAppPipeline
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: 1
+            Configuration:
+              ActionMode: CREATE_UPDATE
+              Capabilities: CAPABILITY_NAMED_IAM
+              RoleArn: !Sub '${CloudFormationServiceRole.Arn}'
+              StackName: !Sub ${GitHubRepo}-application-pipeline-v${Version}-cf
+              TemplatePath: 'Source::templates/application-pipeline.yaml'
+              ParameterOverrides: !Sub '{
+                "GitHubRepo":"${GitHubRepo}",
+                "GitHubOAuthToken":"${GitHubOAuthToken}",
+                "Version":"${Version}",
+                "ArtifactsBucket":"${ArtifactsBucket}"
+              }'
+            InputArtifacts:
+              - Name: Source
+            RunOrder: 1
+      - Name: CreateBeanstalkApp
+        Actions:
+        - Name: DeployBeanstalkApp
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub ${CloudFormationServiceRole.Arn}
+            StackName: !Sub ${GitHubRepo}-us-west-2-eb-app-v${Version}-cf
+            TemplateConfiguration: 'Source::config/application.input.json'
+            TemplatePath: 'Source::templates/application.yaml'
+            ParameterOverrides: !Sub '{
+              "GitHubRepo":"${GitHubRepo}",
+              "Version":"${Version}"
+            }'
+          InputArtifacts:
+          - Name: Source
+          RunOrder: 1
+        - Name: CreateTestEnvironment
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub '${CloudFormationServiceRole.Arn}'
+            StackName: !Sub ${GitHubRepo}-us-west-2-eb-env-test-v${Version}-cf
+            OutputFileName: 'logs/output-environment-us-west-2-test.json'
+            TemplateConfiguration: 'Source::config/environment-us-west-2-test.input.json'
+            TemplatePath: 'Source::templates/environment.yaml'
+            ParameterOverrides: !Sub '{
+              "GitHubRepo": "${GitHubRepo}",
+              "Version":"${Version}"
+              "Lane":"tst"
+            }'
+          InputArtifacts:
+          - Name: Source
+          OutputArtifacts:
+          - Name: DeployTest
+          RunOrder: 2
+        - Name: CreateProductionEnvironment
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CREATE_UPDATE
+            Capabilities: CAPABILITY_NAMED_IAM
+            RoleArn: !Sub '${CloudFormationServiceRole.Arn}'
+            StackName: !Sub ${GitHubRepo}-us-west-2-eb-env-prd-v${Version}-cf
+            OutputFileName: 'logs/output-environment-us-west-2-prd.json'
+            TemplateConfiguration: 'Source::config/environment-us-west-2-prod.input.json'
+            TemplatePath: 'Source::templates/environment.yaml'
+            ParameterOverrides: !Sub '{
+              "GitHubRepo": "${GitHubRepo}",
+              "Version":"${Version}"
+              "Lane":"prd"
+            }'
+          InputArtifacts:
+          - Name: Source
+          OutputArtifacts:
+          - Name: DeployProduction
+          RunOrder: 3

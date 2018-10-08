@@ -1,0 +1,10 @@
+{
+  "Parameters": {
+    "VPCId": "vpc-2c907954",
+    "Subnets": "subnet-488acd31,subnet-a02040eb,subnet-ee2e7eb4",
+    "MinInstanceCount": "1",
+    "MaxInstanceCount": "2",
+    "DeploymentPolicy": "Immutable",
+    "Lane": "tst"
+  }
+}

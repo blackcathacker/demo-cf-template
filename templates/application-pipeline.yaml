@@ -1,0 +1,214 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Demos application pipeline'
+
+Parameters:
+  GitHubRepo:
+    Type: String
+  RegistryUri:
+    Type: String
+    Default: "023365961634.dkr.ecr.us-west-2.amazonaws.com"
+  RegistryId:
+    Type: String
+    Default: "023365961634"
+  GitHubBranch:
+    Type: String
+    Default: "master"
+  GitHubUser:
+    Type: String
+    Default: blackcathacker
+  GitHubOAuthToken:
+    Type: String
+    NoEcho: true
+  BuildComputeType:
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+  ArtifactsBucket:
+    Type: String
+    Default: builds-us-west-2
+  Version:
+    Type: String
+    Default: 1
+
+Resources:
+  CloudFormationServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-application-cfs-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'cloudformation.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  CodePipelineServiceRole:
+    DependsOn: CloudFormationServiceRole
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-application-cps-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'codepipeline.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  CodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-application-cbs-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'codebuild.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  DockerImageBuild:
+    Type: AWS::CodeBuild::Project
+    DependsOn:
+      - CodeBuildServiceRole
+    Properties:
+      Name: !Sub ${GitHubRepo}-docker-image-build-v${Version}-cf
+      ServiceRole: !Ref CodeBuildServiceRole
+      Artifacts:
+        Type: "CODEPIPELINE"
+      TimeoutInMinutes: 60
+      Environment:
+        ComputeType: !Ref BuildComputeType
+        Image: aws/codebuild/docker:1.12.1
+        PrivilegedMode: true
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: REPOSITORY_URI
+            Value: !Ref RegistryUri
+          - Name: REGISTRY_ID
+            Value: !Ref RegistryId
+          - Name: REGISTRY_NAME
+            Value: !Sub demo-cf-template
+      Source:
+        Type: "CODEPIPELINE"
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - $(aws ecr get-login --registry-ids $REGISTRY_ID)
+
+                # Create tags and uri for the docker image
+                - date +%Y%m%d%H%M%S > .image_tag
+            build:
+              commands:
+                - >
+                 docker build --build-arg --build-arg PKG_VERSION="$(cat .image_tag)" \
+                  -t $REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag) .
+            post_build:
+              commands:
+                - docker push "$REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag)"
+                - cat Dockerrun.aws.json | sed "s/\${DOCKER_IMAGE_URI}/$REPOSITORY_URI\/$REGISTRY_NAME:$(cat .image_tag)/" > Dockerrun.aws.json
+          artifacts:
+            discard-paths: no
+            files:
+              - "Dockerrun.aws.json"
+              - "bin/**/*"
+              - ".ebextensions/**/*"
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - CodeBuildServiceRole
+      - CodePipelineServiceRole
+      - CloudFormationServiceRole
+      - DockerImageBuild
+    Properties:
+      Name: !Sub ${GitHubRepo}-application-v${Version}-cf
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+          - Name: DemosSource
+            ActionTypeId:
+              Category: Source
+              Owner: ThirdParty
+              Version: 1
+              Provider: GitHub
+            Configuration:
+              Owner: !Ref GitHubUser
+              Repo: !Sub ${GitHubRepo}
+              Branch: !Ref GitHubBranch
+              OAuthToken: !Ref GitHubOAuthToken
+            OutputArtifacts:
+              - Name: 'source'
+            RunOrder: 1
+        - Name: BuildDeployableArtifacts
+          Actions:
+          - Name: "DockerBuild"
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: 1
+            Configuration:
+              ProjectName: !Ref DockerImageBuild
+            InputArtifacts:
+            - Name: "source"
+            OutputArtifacts:
+            - Name: "dockerrun"
+            RunOrder: 1
+        - Name: TestDeploy
+          Actions:
+          - Name: TestApplicationDeploy
+            InputArtifacts:
+            - Name: dockerrun
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: ElasticBeanstalk
+            Configuration:
+              ApplicationName: !Sub ${GitHubRepo}-${AWS::Region}-v${Version}-cf
+              EnvironmentName: !Sub ${GitHubRepo}-${AWS::Region}-tst-v${Version}-cf
+            RunOrder: 1
+        - Name: ProdDeploy
+          Actions:
+          - Name: ProdApplicationDeploy
+            InputArtifacts:
+            - Name: dockerrun
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: ElasticBeanstalk
+            Configuration:
+              ApplicationName: !Sub ${GitHubRepo}-${AWS::Region}-v${Version}-cf
+              EnvironmentName: !Sub ${GitHubRepo}-${AWS::Region}-prd-v${Version}-cf
+            RunOrder: 1
+
+Outputs:
+  PipelineUrl:
+    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${Pipeline}
+  CodeBuildServiceRole:
+    Value: !Ref CodeBuildServiceRole

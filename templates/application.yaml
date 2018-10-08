@@ -1,0 +1,18 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Demo Application'
+
+Parameters:
+  Version:
+    Type: String
+    Default: 1
+
+  GitHubRepo:
+    Type: String
+
+Resources:
+
+  Application:
+    Type: 'AWS::ElasticBeanstalk::Application'
+    Properties:
+      ApplicationName: !Sub ${GitHubRepo}-${AWS::Region}-v${Version}-cf

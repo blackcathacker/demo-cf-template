@@ -1,0 +1,273 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Demo EBS Environment'
+
+Parameters:
+  Version:
+    Type: String
+    Default: 1
+  GitHubRepo:
+    Type: String
+  Lane:
+    Type: String
+    AllowedValues:
+    - prd
+    - sbx
+    - stg
+    - tst
+    - verify
+  VPCId:
+    Type: String
+  Subnets:
+    Type: CommaDelimitedList
+  MinInstanceCount:
+    Type: String
+  MaxInstanceCount:
+    Type: String
+  DeploymentPolicy:
+    Type: String
+  SolutionStackName:
+    Type: String
+    Default: '64bit Amazon Linux 2017.03 v2.7.4 running Docker 17.03.2-ce'
+
+Resources:
+  ServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-${AWS::Region}-${Lane}-service-role-v${Version}-cf
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: 'elasticbeanstalk.amazonaws.com'
+          Action: 'sts:AssumeRole'
+          Condition:
+            StringEquals:
+              sts:ExternalId: elasticbeanstalk
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService
+        - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${GitHubRepo}-${AWS::Region}-${Lane}-instance-role-v${Version}-cf
+      AssumeRolePolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: 'ec2.amazonaws.com'
+          Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub ${GitHubRepo}-${AWS::Region}-${Lane}-instance-role-privs-v${Version}-cf
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      - arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker
+      - arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+      - arn:aws:iam::aws:policy/AWSElasticBeanstalkReadOnlyAccess
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${GitHubRepo}-${AWS::Region}-${Lane}-instance-profile-v${Version}-cf
+      Roles:
+      - !Ref InstanceRole
+
+
+  Environment:
+    Type: 'AWS::ElasticBeanstalk::Environment'
+    Properties:
+      ApplicationName: !Sub ${GitHubRepo}-${AWS::Region}-v${Version}-cf
+      EnvironmentName: !Sub ${GitHubRepo}-${AWS::Region}-${Lane}-v${Version}-cf
+      SolutionStackName: !Ref SolutionStackName
+      CNAMEPrefix: !Sub ${GitHubRepo}-${Lane}-v${Version}
+      OptionSettings:
+      - OptionName: ServiceRole
+        Namespace: "aws:elasticbeanstalk:environment"
+        Value: !Ref ServiceRole
+      - Namespace: 'aws:autoscaling:launchconfiguration'
+        OptionName: 'IamInstanceProfile'
+        Value: !Ref InstanceProfile
+      - OptionName: VPCId
+        ResourceName: AWSEBSecurityGroup
+        Namespace: "aws:ec2:vpc"
+        Value: !Ref VPCId
+      - OptionName: ELBSubnets
+        Namespace: "aws:ec2:vpc"
+        Value: !Join [ ",", !Ref Subnets ]
+      - OptionName: Subnets
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: "aws:ec2:vpc"
+        Value: !Join [ ",", !Ref Subnets ]
+      - OptionName: AssociatePublicIpAddress
+        ResourceName: AWSEBAutoScalingLaunchConfiguration
+        Namespace: "aws:ec2:vpc"
+        Value: false
+      - OptionName: ELBScheme
+        Namespace: "aws:ec2:vpc"
+        Value: internal
+      - OptionName: BatchSize
+        Namespace: aws:elasticbeanstalk:command
+        Value: 1
+      - OptionName: BatchSizeType
+        Namespace: aws:elasticbeanstalk:command
+        Value: Fixed
+      - OptionName: DeploymentPolicy
+        Namespace: aws:elasticbeanstalk:command
+        Value: !Ref DeploymentPolicy
+      - OptionName: IgnoreHealthCheck
+        Namespace: aws:elasticbeanstalk:command
+        Value: false
+      - OptionName: MaxBatchSize
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        Value: 1
+      - OptionName: MinInstancesInService
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        Value: !Ref MinInstanceCount
+      - OptionName: PauseTime
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: aws:autoscaling:updatepolicy:rollingupdate
+      - OptionName: RollingUpdateEnabled
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        Value: true
+      - OptionName: RollingUpdateType
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        Value: Health
+      - OptionName: Timeout
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        Value: PT30M
+
+      - OptionName: Cooldown
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: "aws:autoscaling:asg"
+        Value: 120
+      - OptionName: MonitoringInterval
+        ResourceName: AWSEBAutoScalingLaunchConfiguration
+        Namespace: "aws:autoscaling:launchconfiguration"
+        Value: "1 minute"
+      - OptionName: MinSize
+        Namespace: aws:autoscaling:asg
+        Value: !Ref MinInstanceCount
+      - OptionName: MaxSize
+        Namespace: aws:autoscaling:asg
+        Value: !Ref MaxInstanceCount
+      - OptionName: BreachDuration
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: 2
+      - OptionName: EvaluationPeriods
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: 2
+      - OptionName: LowerBreachScaleIncrement
+        ResourceName: AWSEBAutoScalingScaleDownPolicy
+        Namespace: "aws:autoscaling:trigger"
+        Value: "-1"
+      - OptionName: LowerThreshold
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: "20"
+      - OptionName: MeasureName
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: CPUUtilization
+      - OptionName: Period
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: 1
+      - OptionName: Statistic
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: Average
+      - OptionName: Unit
+        ResourceName: AWSEBCloudwatchAlarmLow
+        Namespace: "aws:autoscaling:trigger"
+        Value: Percent
+      - OptionName: UpperBreachScaleIncrement
+        ResourceName: AWSEBAutoScalingScaleUpPolicy
+        Namespace: "aws:autoscaling:trigger"
+        Value: 1
+      - OptionName: UpperThreshold
+        ResourceName: AWSEBCloudwatchAlarmHigh
+        Namespace: "aws:autoscaling:trigger"
+        Value: "80"
+      - OptionName: EnvironmentType
+        Namespace: aws:elasticbeanstalk:environment
+        Value: LoadBalanced
+      - OptionName: InstanceType
+        Namespace: "aws:autoscaling:launchconfiguration"
+        Value: "t2.micro"
+      - OptionName: HealthCheckSuccessThreshold
+        Namespace: "aws:elasticbeanstalk:healthreporting:system"
+        Value: Ok
+      - OptionName: SystemType
+        Namespace: "aws:elasticbeanstalk:healthreporting:system"
+        Value: enhanced
+      - OptionName: ManagedActionsEnabled
+        Namespace: "aws:elasticbeanstalk:managedactions"
+        Value: true
+      - OptionName: PreferredStartTime
+        Namespace: "aws:elasticbeanstalk:managedactions"
+        Value: "SAT:07:00"
+      - OptionName: InstanceRefreshEnabled
+        Namespace: "aws:elasticbeanstalk:managedactions:platformupdate"
+        Value: true
+      - OptionName: UpdateLevel
+        Namespace: "aws:elasticbeanstalk:managedactions:platformupdate"
+        Value: minor
+      - OptionName: "Automatically Terminate Unhealthy Instances"
+        Namespace: "aws:elasticbeanstalk:monitoring"
+        Value: true
+      - OptionName: LoadBalancerType
+        Namespace: "aws:elasticbeanstalk:environment"
+        Value: classic
+      - OptionName: DeleteOnTerminate
+        Namespace: "aws:elasticbeanstalk:cloudwatch:logs"
+        Value: true
+      - OptionName: RetentionInDays
+        Namespace: "aws:elasticbeanstalk:cloudwatch:logs"
+        Value: 1
+      - OptionName: StreamLogs
+        Namespace: "aws:elasticbeanstalk:cloudwatch:logs"
+        Value: false
+      - OptionName: CrossZone
+        ResourceName: AWSEBLoadBalancer
+        Namespace: "aws:elb:loadbalancer"
+        Value: true
+      - OptionName: ConnectionDrainingEnabled
+        ResourceName: AWSEBLoadBalancer
+        Namespace: "aws:elb:policies"
+        Value: true
+      - OptionName: ConnectionDrainingTimeout
+        ResourceName: AWSEBLoadBalancer
+        Namespace: "aws:elb:policies"
+        Value: 20
+      - Namespace: "aws:elasticbeanstalk:application:environment"
+        OptionName: "AWS_DEFAULT_REGION"
+        Value: !Ref AWS::Region
+      - Namespace: "aws:elasticbeanstalk:application:environment"
+        OptionName: "AWS_REGION"
+        Value: !Ref AWS::Region
+      - Namespace: "aws:elasticbeanstalk:application:environment"
+        OptionName: "NODE_ENV"
+        Value: production
+      - Namespace: "aws:elasticbeanstalk:application"
+        OptionName: "Application Healthcheck URL"
+        Value: '/demos/health?detail=true'
+
+Outputs:
+  EnvironmentName:
+    Value: !Ref Environment
+  EndpointURL:
+    Value: !Sub "${GitHubRepo}-${Lane}-v${Version}.${AWS::Region}.elasticbeanstalk.com"
