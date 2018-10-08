@@ -118,7 +118,7 @@ Resources:
               commands:
                 - cd app; date +%Y%m%d%H%M%S > .image_tag
                 - >
-                 cd app; docker build --build-arg --build-arg PKG_VERSION="$(cat .image_tag)" \
+                 cd app; docker build --build-arg PKG_VERSION="$(cat .image_tag)" \
                   -t $REPOSITORY_URI/$REGISTRY_NAME:$(cat .image_tag) .
             post_build:
               commands:
