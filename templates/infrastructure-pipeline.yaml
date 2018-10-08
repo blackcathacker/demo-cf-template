@@ -178,7 +178,7 @@ Resources:
             TemplatePath: 'Source::templates/environment.yaml'
             ParameterOverrides: !Sub '{
               "GitHubRepo": "${GitHubRepo}",
-              "Version":"${Version}"
+              "Version":"${Version}",
               "Lane":"tst"
             }'
           InputArtifacts:
@@ -202,7 +202,7 @@ Resources:
             TemplatePath: 'Source::templates/environment.yaml'
             ParameterOverrides: !Sub '{
               "GitHubRepo": "${GitHubRepo}",
-              "Version":"${Version}"
+              "Version":"${Version}",
               "Lane":"prd"
             }'
           InputArtifacts:
