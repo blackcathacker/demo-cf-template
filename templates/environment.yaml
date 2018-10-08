@@ -121,7 +121,7 @@ Resources:
         Value: !Ref DeploymentPolicy
       - OptionName: IgnoreHealthCheck
         Namespace: aws:elasticbeanstalk:command
-        Value: false
+        Value: true
       - OptionName: MaxBatchSize
         ResourceName: AWSEBAutoScalingGroup
         Namespace: aws:autoscaling:updatepolicy:rollingupdate
