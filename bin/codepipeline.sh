@@ -16,6 +16,7 @@ STACK_NAME="$GITHUBREPO-infrastructure-pipeline-v$VERSION-cf"
 echo "Creating ${STACK_NAME}"
 
 aws cloudformation $COMMAND-stack \
+  --profile personal \
   --region us-west-2 \
   --stack-name $STACK_NAME \
   --template-body file://templates/infrastructure-pipeline.yaml \
