@@ -86,6 +86,9 @@ Resources:
       SolutionStackName: !Ref SolutionStackName
       CNAMEPrefix: !Sub ${GitHubRepo}-${Lane}-v${Version}
       OptionSettings:
+      - OptionName: EC2KeyName
+        Namespace: aws:autoscaling:launchconfiguration
+        Value: PersonalAWS
       - OptionName: ServiceRole
         Namespace: "aws:elasticbeanstalk:environment"
         Value: !Ref ServiceRole
