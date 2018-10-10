@@ -95,6 +95,17 @@ Resources:
       - Namespace: 'aws:autoscaling:launchconfiguration'
         OptionName: 'IamInstanceProfile'
         Value: !Ref InstanceProfile
+      - OptionName: VPCId
+        ResourceName: AWSEBSecurityGroup
+        Namespace: "aws:ec2:vpc"
+        Value: !Ref VPCId
+      - OptionName: ELBSubnets
+        Namespace: "aws:ec2:vpc"
+        Value: !Join [ ",", !Ref Subnets ]
+      - OptionName: Subnets
+        ResourceName: AWSEBAutoScalingGroup
+        Namespace: "aws:ec2:vpc"
+        Value: !Join [ ",", !Ref Subnets ]
       - OptionName: AssociatePublicIpAddress
         ResourceName: AWSEBAutoScalingLaunchConfiguration
         Namespace: "aws:ec2:vpc"
