@@ -172,21 +172,7 @@ Resources:
             - Name: "source"
             OutputArtifacts:
             - Name: "dockerrun"
-            RunOrder: 1
-        - Name: ReleaseMgr
-          Actions:
-          - Name: InvokeReleaseMgrLambda
-            ActionTypeId:
-              Category: Invoke
-              Owner: AWS
-              Version: 1
-              Provider: Lambda
-            InputArtifacts:
-              - Name: dockerrun
-            Configuration:
-              FunctionName: rel-mgr-staging-new-release
-              UserParameters: '{"projectId":"QnDk5AOx7"}'
-            RunOrder: 1      
+            RunOrder: 1   
         - Name: TestDeploy
           Actions:
           - Name: TestApplicationDeploy
@@ -201,20 +187,20 @@ Resources:
               ApplicationName: !Sub ${GitHubRepo}-${AWS::Region}-v${Version}-cf
               EnvironmentName: !Sub ${GitHubRepo}-${AWS::Region}-tst-v${Version}-cf
             RunOrder: 1
-        - Name: ProdDeploy
+        - Name: ReleaseMgr
           Actions:
-          - Name: ProdApplicationDeploy
-            InputArtifacts:
-            - Name: dockerrun
+          - Name: InvokeReleaseMgrLambda
             ActionTypeId:
-              Category: Deploy
+              Category: Invoke
               Owner: AWS
-              Version: '1'
-              Provider: ElasticBeanstalk
+              Version: 1
+              Provider: Lambda
+            InputArtifacts:
+              - Name: dockerrun
             Configuration:
-              ApplicationName: !Sub ${GitHubRepo}-${AWS::Region}-v${Version}-cf
-              EnvironmentName: !Sub ${GitHubRepo}-${AWS::Region}-prd-v${Version}-cf
-            RunOrder: 1
+              FunctionName: rel-mgr-staging-new-release
+              UserParameters: '{"projectId":"QnDk5AOx7"}'
+            RunOrder: 1   
 
 Outputs:
   PipelineUrl:
