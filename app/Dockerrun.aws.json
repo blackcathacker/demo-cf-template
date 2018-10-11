@@ -1,7 +1,7 @@
 {
     "AWSEBDockerrunVersion": "1",
     "Image": {
-        "Name": "023365961634.dkr.ecr.us-west-2.amazonaws.com/demo-cf-template:latest",
+        "Name": "${DOCKER_IMAGE_URI}",
         "Update": "true"
     },
     "Ports": [
