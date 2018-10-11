@@ -185,7 +185,7 @@ Resources:
               - Name: dockerrun
             Configuration:
               FunctionName: rel-mgr-staging-new-release
-              UserParameters: Protocols
+              UserParameters: '{"projectId":"QnDk5AOx7"}'
             RunOrder: 1      
         - Name: TestDeploy
           Actions:
