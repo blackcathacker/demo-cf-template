@@ -173,9 +173,9 @@ Resources:
             OutputArtifacts:
             - Name: "dockerrun"
             RunOrder: 1
-        - Name: Fred
+        - Name: ReleaseMgr
           Actions:
-          - Name: InvokeFredLambda
+          - Name: InvokeReleaseMgrLambda
             ActionTypeId:
               Category: Invoke
               Owner: AWS
@@ -185,6 +185,7 @@ Resources:
               - Name: dockerrun
             Configuration:
               FunctionName: rel-mgr-staging-new-release
+              UserParameters: productName=Protocols
             RunOrder: 1      
         - Name: TestDeploy
           Actions:
